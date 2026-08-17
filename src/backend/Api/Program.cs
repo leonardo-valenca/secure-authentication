@@ -1,8 +1,11 @@
 using Api.Endpoints.Authentication;
 using Application.Abstractions.Behaviors;
 using FluentValidation;
+using Infrastructure;
+using Infrastructure.Persistence;
 using Mediator;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Events;
@@ -46,7 +49,7 @@ try
         options.ServiceLifetime = ServiceLifetime.Scoped;
     });
     builder.Services.AddValidatorsFromAssembly(typeof(Application.AssemblyReference).Assembly);
-
+    builder.Services.AddInfrastructure(builder.Configuration);
     // Add services to the container.
     // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
     builder.Services.AddOpenApi();
@@ -65,8 +68,18 @@ try
         };
     });
 
+    builder.Services.AddAuthorization();
+
     var app = builder.Build();
 
+    // Convenient for a single-instance demo/dev deployment; a multi-instance production rollout
+    // would run migrations as a separate release step instead of racing every instance on startup.
+    using (var migrationScope = app.Services.CreateScope())
+    {
+        var dbContext = migrationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await dbContext.Database.MigrateAsync();
+    }
+    
     // Configure the HTTP request pipeline.
     if (app.Environment.IsDevelopment())
     {
