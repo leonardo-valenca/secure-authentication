@@ -1,41 +1,107 @@
-var builder = WebApplication.CreateBuilder(args);
+using Api.Endpoints.Authentication;
+using Application.Abstractions.Behaviors;
+using FluentValidation;
+using Mediator;
+using Microsoft.AspNetCore.Diagnostics;
+using Scalar.AspNetCore;
+using Serilog;
+using Serilog.Events;
+using Serilog.Formatting.Compact;
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+// A bootstrap logger covers failures that happen before the real Serilog pipeline (built from
+// configuration further down) exists, a bad connection string or a config binding error would
+// otherwise be lost, since nothing would be listening yet to log it.
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .CreateBootstrapLogger();
 
-var app = builder.Build();
-
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+try
 {
-    app.MapOpenApi();
+    var builder = WebApplication.CreateBuilder(args);
+
+    // The plain static-Log.Logger form, not the lazy (context, services, configuration) => ...
+    // overload: that one builds a ReloadableLogger which can only be frozen once, and
+    // WebApplicationFactory<Program> (see the integration test suite) re-enters this same
+    // top-level Program in-process, first via HostFactoryResolver to discover services (caught
+    // above as HostAbortedException), then again to actually build the test host. A second
+    // freeze attempt on the same reloadable logger throws; reassigning Log.Logger outright on
+    // each entry doesn't have that problem.
+    Log.Logger = new LoggerConfiguration()
+        .ReadFrom.Configuration(builder.Configuration)
+        .Enrich.FromLogContext()
+        .Enrich.WithMachineName()
+        .Enrich.WithEnvironmentName()
+        .WriteTo.Console(builder.Environment.IsDevelopment()
+            ? new Serilog.Formatting.Display.MessageTemplateTextFormatter(
+                "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+            : new CompactJsonFormatter())
+        .CreateLogger();
+
+    builder.Host.UseSerilog();
+
+    builder.Services.AddMediator(options =>
+    {
+        options.Assemblies = [typeof(Application.AssemblyReference)];
+        options.PipelineBehaviors = [typeof(ValidationBehavior<,>)];
+        options.ServiceLifetime = ServiceLifetime.Scoped;
+    });
+    builder.Services.AddValidatorsFromAssembly(typeof(Application.AssemblyReference).Assembly);
+
+    // Add services to the container.
+    // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+    builder.Services.AddOpenApi();
+
+    builder.Services.AddProblemDetails(options =>
+    {
+        options.CustomizeProblemDetails = context =>
+        {
+            // Exception details (message/stack trace) are only useful, and only safe, locally.
+            if (!builder.Environment.IsDevelopment())
+                return;
+
+            var exception = context.HttpContext.Features.Get<IExceptionHandlerFeature>()?.Error;
+            if (exception is not null)
+                context.ProblemDetails.Extensions["exception"] = exception.ToString();
+        };
+    });
+
+    var app = builder.Build();
+
+    // Configure the HTTP request pipeline.
+    if (app.Environment.IsDevelopment())
+    {
+        app.MapOpenApi();
+        app.MapScalarApiReference();
+    }
+    else
+    {
+        app.UseHsts();
+    }
+
+    app.UseHttpsRedirection();
+
+    app.UseRateLimiter();
+
+    app.UseAuthentication();
+    app.UseAuthorization();
+
+    app.MapAuthenticationEndpoints();
+
+    app.Run();
+}
+catch (Exception exception) when (exception is not HostAbortedException)
+{
+    // HostAbortedException is excluded deliberately: WebApplicationFactory<Program> (see the
+    // integration test suite) builds and immediately tears down a host to discover services,
+    // which throws exactly this by design. It isn't a real startup failure and shouldn't be
+    // logged as one.
+    Log.Fatal(exception, "Clean Authentication API terminated unexpectedly during startup");
+    throw;
+}
+finally
+{
+    Log.CloseAndFlush();
 }
 
-app.UseHttpsRedirection();
-
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast = Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
-
-app.Run();
-
-internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
+// Exposed for WebApplicationFactory<Program> in integration tests.
+public partial class Program;
