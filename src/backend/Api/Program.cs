@@ -1,11 +1,15 @@
+using System.Text;
+using Api.Authentication;
 using Api.Endpoints.Authentication;
 using Application.Abstractions.Behaviors;
 using FluentValidation;
 using Infrastructure;
 using Infrastructure.Persistence;
 using Mediator;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Events;
@@ -67,6 +71,46 @@ try
                 context.ProblemDetails.Extensions["exception"] = exception.ToString();
         };
     });
+
+    builder.Services
+        .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
+        {
+            // Claim types are kept exactly as issued (e.g. "sub", "email") instead of ASP.NET Core's
+            // default remapping to long http://schemas.xmlsoap.org/... ClaimTypes URIs.
+            options.MapInboundClaims = false;
+
+            // Every configured key stays valid for verification, not just the one currently signing
+            // new tokens (see JwtTokenGenerator), so a key can be rotated out without invalidating
+            // every session signed with it up to access-token-lifetime ago.
+            var signingKeys = builder.Configuration.GetSection("Jwt:SigningKeys").GetChildren()
+                .Select(section => new SymmetricSecurityKey(Encoding.UTF8.GetBytes(section["Key"]!)) { KeyId = section["Id"] })
+                .ToArray();
+
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidIssuer = builder.Configuration["Jwt:Issuer"],
+                ValidAudience = builder.Configuration["Jwt:Audience"],
+                IssuerSigningKeys = signingKeys,
+                // Pinned explicitly rather than trusting the token's own header: HMAC is the only
+                // algorithm we ever sign with, so nothing else should ever be accepted as valid.
+                ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+                ClockSkew = TimeSpan.Zero
+            };
+
+            // The access token travels as an HttpOnly cookie, never as an Authorization header,
+            // so it never touches JavaScript, read it from there instead.
+            options.Events = new JwtBearerEvents
+            {
+                OnMessageReceived = context =>
+                {
+                    if (context.Request.Cookies.TryGetValue(AuthCookies.AccessToken, out var token))
+                        context.Token = token;
+
+                    return Task.CompletedTask;
+                }
+            };
+        });
 
     builder.Services.AddAuthorization();
 

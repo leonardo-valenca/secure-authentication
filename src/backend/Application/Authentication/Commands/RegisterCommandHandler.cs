@@ -10,7 +10,7 @@ namespace Application.Authentication.Commands
 {
     public sealed class RegisterCommandHandler(
         IUserRepository userRepository,
-        IEmailSender emailSender,
+        // IEmailSender emailSender,
         ILogger<RegisterCommandHandler> logger) : IRequestHandler<RegisterCommand, Result<AuthenticationResponse>>
     {
         public async ValueTask<Result<AuthenticationResponse>> Handle(RegisterCommand request, CancellationToken cancellationToken)
@@ -34,7 +34,7 @@ namespace Application.Authentication.Commands
 
             try
             {
-                await emailSender.SendEmailConfirmationEmailAsync(user.Email.Value, confirmationToken!, cancellationToken);
+                // await emailSender.SendEmailConfirmationEmailAsync(user.Email.Value, confirmationToken!, cancellationToken);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {

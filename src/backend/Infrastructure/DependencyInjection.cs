@@ -1,11 +1,11 @@
 using Application.Abstractions.Notifications;
 using Application.Abstractions.Persistence;
-// using Application.Abstractions.Security;
+using Application.Abstractions.Security;
 using Infrastructure.Identity;
 // using Infrastructure.Notifications;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Repositories;
-// using Infrastructure.Security;
+using Infrastructure.Security;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -54,10 +54,10 @@ namespace Infrastructure
                 .AddSignInManager();
 
             services.AddScoped<IUserRepository, UserRepository>();
-            //services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+            services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
-            // services.AddSingleton<ITokenHasher, TokenHasher>();
-            // services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
+            services.AddSingleton<ITokenHasher, TokenHasher>();
+            services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 
             // Real delivery only when SMTP is actually configured - keeps local dev, CI, and
             // integration tests working with zero external dependencies otherwise.
@@ -79,10 +79,10 @@ namespace Infrastructure
             //     services.AddSingleton<IEmailSender, SmtpEmailSender>();
             // }
 
-            // services.AddOptions<JwtOptions>()
-            //     .Bind(configuration.GetSection(JwtOptions.SectionName))
-            //     .ValidateDataAnnotations()
-            //     .ValidateOnStart();
+            services.AddOptions<JwtOptions>()
+                .Bind(configuration.GetSection(JwtOptions.SectionName))
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
 
             // services.AddOptions<FrontendOptions>()
             //     .Bind(configuration.GetSection(FrontendOptions.SectionName))
