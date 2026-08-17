@@ -427,3 +427,16 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# macOS
+.DS_Store
+
+# JetBrains IDEs (Rider, IntelliJ, WebStorm, ...)
+.idea/
+
+# Exported ASP.NET Core dev cert (private key) for the local proxy container - regenerate with
+# `dotnet dev-certs https --export-path .certs/localhost.pem --format Pem --no-password`, never commit it.
+/.certs
+
+# scripts/backup-db.sh's output - real database backups never belong in source control.
+/backups
