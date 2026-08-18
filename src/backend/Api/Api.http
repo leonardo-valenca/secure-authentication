@@ -1,6 +1,106 @@
-@Api_HostAddress = http://localhost:5084
+@Api_HostAddress = https://localhost:7270
 
-GET {{Api_HostAddress}}/weatherforecast/
-Accept: application/json
+### 1. Prime the CSRF cookie - run this first, every session.
+# The response Set-Cookie header carries "XSRF-TOKEN=<value>". Copy <value> into @csrfToken below.
+GET {{Api_HostAddress}}/api/csrf-token
+
+###
+
+@csrfToken = REPLACE_WITH_XSRF-TOKEN_COOKIE_VALUE
+
+### 2. Register a new account. Sends a confirmation email (logged, not sent - see step 3).
+POST {{Api_HostAddress}}/api/authentication/register
+Content-Type: application/json
+X-XSRF-TOKEN: {{csrfToken}}
+
+{
+  "email": "test@example.com",
+  "password": "StrongPass1!"
+}
+
+###
+
+@confirmationToken = REPLACE_WITH_TOKEN_FROM_LOG_OUTPUT
+
+### 3. Confirm the email using the token logged by step 2 (see LoggingEmailSender). Login is
+### blocked - RequireConfirmedEmail - until this runs; step 4 fails with 400 EmailNotConfirmed
+### without it.
+POST {{Api_HostAddress}}/api/authentication/confirm-email
+Content-Type: application/json
+X-XSRF-TOKEN: {{csrfToken}}
+
+{
+  "email": "test@example.com",
+  "token": "{{confirmationToken}}"
+}
+
+###
+
+### 4. Log in. Sets access_token + refresh_token as HttpOnly cookies.
+POST {{Api_HostAddress}}/api/authentication/login
+Content-Type: application/json
+X-XSRF-TOKEN: {{csrfToken}}
+
+{
+  "email": "test@example.com",
+  "password": "StrongPass1!"
+}
+
+### 5. Get the current user, resolved from the access_token cookie.
+GET {{Api_HostAddress}}/api/authentication/me
+
+###
+
+### 6. Rotate the refresh token (also issues a fresh access token).
+POST {{Api_HostAddress}}/api/authentication/refresh
+X-XSRF-TOKEN: {{csrfToken}}
+
+###
+
+### 7. Change password while logged in (requires the access_token cookie from step 4).
+# On success this revokes every session for the account, including the one making this call -
+# the access_token/refresh_token cookies captured so far stop working right after this request.
+POST {{Api_HostAddress}}/api/authentication/change-password
+Content-Type: application/json
+X-XSRF-TOKEN: {{csrfToken}}
+
+{
+  "currentPassword": "StrongPass1!",
+  "newPassword": "EvenStrongerPass1!"
+}
+
+###
+
+### 8. Request a password reset. Always 204, regardless of whether the email is registered.
+# No email provider is configured yet - the reset link is logged instead (see LoggingEmailSender).
+POST {{Api_HostAddress}}/api/authentication/forgot-password
+Content-Type: application/json
+X-XSRF-TOKEN: {{csrfToken}}
+
+{
+  "email": "test@example.com"
+}
+
+###
+
+@resetToken = REPLACE_WITH_TOKEN_FROM_LOG_OUTPUT
+
+### 9. Reset the password using the token from step 8.
+POST {{Api_HostAddress}}/api/authentication/reset-password
+Content-Type: application/json
+X-XSRF-TOKEN: {{csrfToken}}
+
+{
+  "email": "test@example.com",
+  "token": "{{resetToken}}",
+  "newPassword": "AnotherStrongPass1!"
+}
+
+###
+
+### 10. Log out. Revokes the refresh token server-side and clears both cookies (harmless no-op if
+### the session was already killed by step 7's change-password).
+POST {{Api_HostAddress}}/api/authentication/logout
+X-XSRF-TOKEN: {{csrfToken}}
 
 ###
