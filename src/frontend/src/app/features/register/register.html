@@ -1,0 +1,88 @@
+<div class="page">
+  <div class="card">
+    <h1>Create an account</h1>
+
+    @if (success()) {
+      <p class="form-success" role="status">
+        Account created. Check your email for a confirmation link before logging in.
+      </p>
+      <p class="card-footer"><a routerLink="/login">Go to log in</a></p>
+    } @else {
+      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        <div class="field">
+          <label for="email">Email</label>
+          <input
+            id="email"
+            type="email"
+            formControlName="email"
+            autocomplete="email"
+            [attr.aria-invalid]="form.controls.email.invalid && form.controls.email.touched"
+            [attr.aria-describedby]="
+              form.controls.email.invalid && form.controls.email.touched ? 'email-error' : null
+            "
+          />
+          @if (form.controls.email.invalid && form.controls.email.touched) {
+            <p id="email-error" class="field-error" role="alert">A valid email is required.</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <input
+            id="password"
+            type="password"
+            formControlName="password"
+            autocomplete="new-password"
+            [attr.aria-invalid]="
+              form.controls.password.errors?.['weakPassword'] && form.controls.password.touched
+            "
+            [attr.aria-describedby]="
+              form.controls.password.errors?.['weakPassword'] && form.controls.password.touched
+                ? 'password-error'
+                : null
+            "
+          />
+          @if (form.controls.password.errors?.['weakPassword'] && form.controls.password.touched) {
+            <p id="password-error" class="field-error" role="alert">
+              At least 8 characters, with an uppercase letter, a lowercase letter, a digit, and a
+              symbol.
+            </p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="confirmPassword">Confirm password</label>
+          <input
+            id="confirmPassword"
+            type="password"
+            formControlName="confirmPassword"
+            autocomplete="new-password"
+            [attr.aria-invalid]="
+              form.errors?.['passwordsMismatch'] && form.controls.confirmPassword.touched
+            "
+            [attr.aria-describedby]="
+              form.errors?.['passwordsMismatch'] && form.controls.confirmPassword.touched
+                ? 'confirm-password-error'
+                : null
+            "
+          />
+          @if (form.errors?.['passwordsMismatch'] && form.controls.confirmPassword.touched) {
+            <p id="confirm-password-error" class="field-error" role="alert">
+              Passwords do not match.
+            </p>
+          }
+        </div>
+
+        @if (errorMessage()) {
+          <p class="form-error" role="alert">{{ errorMessage() }}</p>
+        }
+
+        <button type="submit" [disabled]="submitting()">
+          {{ submitting() ? 'Creating account…' : 'Create account' }}
+        </button>
+      </form>
+
+      <p class="card-footer">Already have an account? <a routerLink="/login">Log in</a></p>
+    }
+  </div>
+</div>

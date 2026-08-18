@@ -1,0 +1,19 @@
+<div class="page">
+  <div class="card">
+    <h1>Dashboard</h1>
+
+    <div class="user-info">
+      <span class="email">{{ user()?.email }}</span>
+      <span>Signed in via HttpOnly cookie session.</span>
+    </div>
+
+    <button type="button" class="secondary" routerLink="/change-password">Change password</button>
+    <button type="button" class="secondary" routerLink="/two-factor-settings">
+      Two-factor authentication
+    </button>
+    <button type="button" class="secondary" (click)="exportData()">Download my data</button>
+    <button type="button" class="secondary" (click)="logout()">Log out</button>
+
+    <p class="card-footer"><a routerLink="/delete-account">Delete account</a></p>
+  </div>
+</div>

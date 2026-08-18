@@ -1,0 +1,31 @@
+<div class="page">
+  <div class="card">
+    <h1>Confirm your email</h1>
+
+    @if (linkInvalid) {
+      <p class="form-error" role="alert">
+        This confirmation link is invalid or missing information.
+      </p>
+      <p class="card-footer"><a routerLink="/login">Back to log in</a></p>
+    } @else if (state() === 'confirming') {
+      <p role="status">Confirming your email…</p>
+    } @else if (state() === 'success') {
+      <p class="form-success" role="status">Your email is confirmed. You can now log in.</p>
+      <p class="card-footer"><a routerLink="/login">Log in</a></p>
+    } @else {
+      <p class="form-error" role="alert">{{ errorMessage() }}</p>
+
+      @if (resent()) {
+        <p class="form-success" role="status">
+          If that link expired, a new confirmation email is on its way.
+        </p>
+      } @else {
+        <button type="button" [disabled]="resending()" (click)="resend()">
+          {{ resending() ? 'Resending…' : 'Resend confirmation email' }}
+        </button>
+      }
+
+      <p class="card-footer"><a routerLink="/login">Back to log in</a></p>
+    }
+  </div>
+</div>
