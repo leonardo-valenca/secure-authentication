@@ -1,6 +1,8 @@
 using System.Text;
 using System.Threading.RateLimiting;
+using Api;
 using Api.Authentication;
+using Api.Endpoints;
 using Api.Endpoints.Authentication;
 using Application.Abstractions.Behaviors;
 using Application.Authentication;
@@ -10,6 +12,7 @@ using Infrastructure.Persistence;
 using Mediator;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -75,6 +78,12 @@ try
     // Add services to the container.
     // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
     builder.Services.AddOpenApi();
+
+    // Registered before AddProblemDetails, matching the framework's own composition order:
+    // IExceptionHandler implementations run in registration order until one returns true, and this
+    // one always does, it's the catch-all default rather than one case among several, so it
+    // needs to be able to fall back to the ProblemDetails pipeline being configured right after it.
+    builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
     builder.Services.AddProblemDetails(options =>
     {
@@ -247,6 +256,40 @@ try
         app.UseHsts();
     }
 
+    // Must run before anything else that cares about the request scheme (exception handling, HSTS,
+    // HTTPS redirection) - it's what lets the app know a request arrived as HTTPS at the proxy, even
+    // though the proxy-to-api hop behind it is plain HTTP on the private Docker network.
+    app.UseForwardedHeaders();
+
+    app.UseSerilogRequestLogging(options =>
+    {
+        // Health checks poll every few seconds by design (see the orchestrator's healthcheck
+        // interval in docker-compose.yml), logging every one of them at Information would drown
+        // out everything else in the log within minutes without ever telling anyone anything new.
+        options.GetLevel = (httpContext, _, exception) => exception is not null
+            ? LogEventLevel.Error
+            : httpContext.Request.Path.StartsWithSegments("/alive") || httpContext.Request.Path.StartsWithSegments("/ready")
+                ? LogEventLevel.Verbose
+                : LogEventLevel.Information;
+    });
+
+    app.UseExceptionHandler();
+
+    app.Use(async (context, next) =>
+    {
+        context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+        context.Response.Headers.Append("Referrer-Policy", "no-referrer");
+
+        if (!app.Environment.IsDevelopment())
+        {
+            // This is a pure JSON API, it never serves HTML, so a maximally strict CSP is safe.
+            // Skipped in Development because Scalar's interactive API docs UI needs its own resources.
+            context.Response.Headers.Append("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+        }
+
+        await next();
+    });
+
     app.UseHttpsRedirection();
 
     app.UseRateLimiter();
@@ -255,7 +298,22 @@ try
     app.UseAuthorization();
 
     app.MapAuthenticationEndpoints();
+    app.MapCsrfEndpoints();
 
+    // Unauthenticated, unrated-limited by design, orchestrators poll these frequently and neither
+    // carries user-controllable input. Split by tag rather than one combined endpoint: /alive runs
+    // zero checks (Predicate excludes everything) and only answers "is the process responding at
+    // all", a database outage shouldn't make an orchestrator kill and restart an otherwise-healthy
+    // process. /ready runs the "ready"-tagged checks (DB connectivity) and answers "can this
+    // instance actually serve a request right now" - what should gate traffic/load-balancer routing.
+    app.MapHealthChecks("/alive", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
+    app.MapHealthChecks("/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") }).AllowAnonymous();
+
+    // Same trust model as /health: the api container publishes no port of its own and Caddy (see
+    // proxy/Caddyfile) never routes to /metrics, so this is only ever reachable from inside the
+    // Compose network - by a Prometheus instance scraping it, not the public internet.
+    app.MapPrometheusScrapingEndpoint();
+    
     app.Run();
 }
 catch (Exception exception) when (exception is not HostAbortedException)
