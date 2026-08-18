@@ -89,7 +89,7 @@ namespace Infrastructure
                 .ValidateDataAnnotations()
                 .ValidateOnStart();
 
-            // services.AddHostedService<RefreshTokenCleanupBackgroundService>();
+            services.AddHostedService<RefreshTokenCleanupBackgroundService>();
 
             return services;
         }

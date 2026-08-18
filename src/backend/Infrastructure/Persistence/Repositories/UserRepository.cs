@@ -4,7 +4,7 @@ using Application.Authentication.Responses;
 using Domain.Common;
 using Domain.Users;
 using Infrastructure.Identity;
-// using Infrastructure.Security;
+using Infrastructure.Security;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -14,7 +14,7 @@ namespace Infrastructure.Persistence.Repositories
     internal sealed class UserRepository(
         UserManager<AppIdentityUser> userManager,
         SignInManager<AppIdentityUser> signInManager,
-        // IOptions<JwtOptions> jwtOptions,
+        IOptions<JwtOptions> jwtOptions,
         ILogger<UserRepository> logger) : IUserRepository
     {
         // Recovery codes are single-use, one-time-shown backup credentials for when the
@@ -173,26 +173,25 @@ namespace Infrastructure.Persistence.Repositories
 
         public async Task<Result<TwoFactorSetup>> GenerateTwoFactorSetupAsync(Guid userId, CancellationToken cancellationToken)
         {
-            // var identityUser = await userManager.FindByIdAsync(userId.ToString());
-            // if (identityUser is null)
-            //     return Result.Failure<TwoFactorSetup>(UserErrors.AccountNotFound);
+            var identityUser = await userManager.FindByIdAsync(userId.ToString());
+            if (identityUser is null)
+                return Result.Failure<TwoFactorSetup>(UserErrors.AccountNotFound);
 
-            // // A key already exists whenever setup was started before but never confirmed with
-            // // EnableTwoFactorAsync, reuse it instead of invalidating an authenticator app entry
-            // // the user may have already scanned.
-            // var key = await userManager.GetAuthenticatorKeyAsync(identityUser);
-            // if (string.IsNullOrEmpty(key))
-            // {
-            //     await userManager.ResetAuthenticatorKeyAsync(identityUser);
-            //     key = await userManager.GetAuthenticatorKeyAsync(identityUser);
-            // }
+            // A key already exists whenever setup was started before but never confirmed with
+            // EnableTwoFactorAsync, reuse it instead of invalidating an authenticator app entry
+            // the user may have already scanned.
+            var key = await userManager.GetAuthenticatorKeyAsync(identityUser);
+            if (string.IsNullOrEmpty(key))
+            {
+                await userManager.ResetAuthenticatorKeyAsync(identityUser);
+                key = await userManager.GetAuthenticatorKeyAsync(identityUser);
+            }
 
-            // var issuer = Uri.EscapeDataString(jwtOptions.Value.Issuer);
-            // var label = Uri.EscapeDataString(identityUser.Email!);
-            // var authenticatorUri = $"otpauth://totp/{issuer}:{label}?secret={key}&issuer={issuer}&digits=6";
+            var issuer = Uri.EscapeDataString(jwtOptions.Value.Issuer);
+            var label = Uri.EscapeDataString(identityUser.Email!);
+            var authenticatorUri = $"otpauth://totp/{issuer}:{label}?secret={key}&issuer={issuer}&digits=6";
 
-            // return new TwoFactorSetup(key!, authenticatorUri);
-            return new TwoFactorSetup(string.Empty, string.Empty);
+            return new TwoFactorSetup(key!, authenticatorUri);
         }
 
         public async Task<Result<IReadOnlyList<string>>> EnableTwoFactorAsync(Guid userId, string code, CancellationToken cancellationToken)
