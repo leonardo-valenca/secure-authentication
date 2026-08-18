@@ -114,6 +114,8 @@ try
 
     builder.Services.AddAuthorization();
 
+    builder.Services.AddRateLimiter();
+    
     var app = builder.Build();
 
     // Convenient for a single-instance demo/dev deployment; a multi-instance production rollout
