@@ -31,6 +31,16 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
 
+    // Docker/Kubernetes secrets convention: a secret mounted as a file under /run/secrets, one
+    // file per value, named with the same "__" section-separator convention already used for the
+    // environment variables below (e.g. a file literally named "Jwt__SigningKeys__0__Key"). Wins
+    // over the environment-variable values docker-compose.yml sets today, so a deployment that
+    // cares about secrets never appearing in `docker inspect`/process listings can mount them here
+    // with no code change - see README's "Secrets in production" section. A no-op everywhere else:
+    // `optional: true` means a missing /run/secrets directory (every environment so far, including
+    // this project's own docker-compose.yml) changes nothing.
+    builder.Configuration.AddKeyPerFile(directoryPath: "/run/secrets", optional: true);
+
     // The plain static-Log.Logger form, not the lazy (context, services, configuration) => ...
     // overload: that one builds a ReloadableLogger which can only be frozen once, and
     // WebApplicationFactory<Program> (see the integration test suite) re-enters this same
