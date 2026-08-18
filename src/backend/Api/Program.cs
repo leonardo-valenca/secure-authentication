@@ -1,19 +1,24 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using Api.Authentication;
 using Api.Endpoints.Authentication;
 using Application.Abstractions.Behaviors;
+using Application.Authentication;
 using FluentValidation;
 using Infrastructure;
 using Infrastructure.Persistence;
 using Mediator;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using RedisRateLimiting;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
+using StackExchange.Redis;
 
 // A bootstrap logger covers failures that happen before the real Serilog pipeline (built from
 // configuration further down) exists, a bad connection string or a config binding error would
@@ -114,8 +119,68 @@ try
 
     builder.Services.AddAuthorization();
 
-    builder.Services.AddRateLimiter();
-    
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+        // The reverse proxy container is the only thing that can reach this API at all, its own
+        // port isn't published to the host (see docker-compose.yml), so trusting forwarded headers
+        // unconditionally is safe here: there's no other path by which they could be spoofed.
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+
+    var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
+
+    builder.Services.AddRateLimiter(options =>
+    {
+        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+        var permitLimit = builder.Configuration.GetValue("RateLimiting:Auth:PermitLimit", 10);
+        var windowSeconds = builder.Configuration.GetValue("RateLimiting:Auth:WindowSeconds", 60);
+
+        options.OnRejected = (context, cancellationToken) =>
+        {
+            var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+            var remoteIp = context.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            logger.RateLimitExceeded(remoteIp, context.HttpContext.Request.Path);
+            return ValueTask.CompletedTask;
+        };
+
+        // A single-instance deployment (this project's own docker-compose.yml) works fine with
+        // the in-memory limiter below, every request lands on the same process either way. It
+        // stops being correct the moment there's more than one API instance behind a load
+        // balancer: each instance would keep its own independent count, silently multiplying the
+        // effective limit by the instance count. Redis-backed limiting closes that gap, same
+        // policy name, same PermitLimit/Window semantics, just a shared counter instead of a
+        // per-process one, and only turns on when ConnectionStrings:Redis is actually configured,
+        // same optional-infrastructure pattern as SmtpEmailSender falling back to a logging stub.
+        if (!string.IsNullOrEmpty(redisConnectionString))
+        {
+            var connectionMultiplexer = ConnectionMultiplexer.Connect(redisConnectionString);
+
+            options.AddPolicy(AuthenticationEndpoints.AuthRateLimiterPolicy, httpContext => RedisRateLimitPartition.GetFixedWindowRateLimiter(
+                partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory: _ => new RedisFixedWindowRateLimiterOptions
+                {
+                    PermitLimit = permitLimit,
+                    Window = TimeSpan.FromSeconds(windowSeconds),
+                    ConnectionMultiplexerFactory = () => connectionMultiplexer
+                }));
+        }
+        else
+        {
+            options.AddPolicy(AuthenticationEndpoints.AuthRateLimiterPolicy, httpContext => RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = permitLimit,
+                    Window = TimeSpan.FromSeconds(windowSeconds),
+                    QueueLimit = 0
+                }));
+        }
+    });
+
     var app = builder.Build();
 
     // Convenient for a single-instance demo/dev deployment; a multi-instance production rollout
