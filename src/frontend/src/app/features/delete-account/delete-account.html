@@ -1,0 +1,45 @@
+<p>delete-account works!</p>
+<div class="page">
+  <div class="card">
+    <h1>Delete account</h1>
+
+    <p class="form-error" role="alert">
+      This permanently deletes your account and every session tied to it. This cannot be undone.
+    </p>
+
+    <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+      <div class="field">
+        <label for="currentPassword">Current password</label>
+        <input
+          id="currentPassword"
+          type="password"
+          formControlName="currentPassword"
+          autocomplete="current-password"
+          [attr.aria-invalid]="
+            form.controls.currentPassword.invalid && form.controls.currentPassword.touched
+          "
+          [attr.aria-describedby]="
+            form.controls.currentPassword.invalid && form.controls.currentPassword.touched
+              ? 'current-password-error'
+              : null
+          "
+        />
+        @if (form.controls.currentPassword.invalid && form.controls.currentPassword.touched) {
+          <p id="current-password-error" class="field-error" role="alert">
+            Current password is required.
+          </p>
+        }
+      </div>
+
+      @if (errorMessage()) {
+        <p class="form-error" role="alert">{{ errorMessage() }}</p>
+      }
+
+      <button type="submit" class="danger" [disabled]="submitting()">
+        {{ submitting() ? 'Deleting…' : 'Permanently delete my account' }}
+      </button>
+    </form>
+
+    <p class="card-footer"><a routerLink="/dashboard">Cancel</a></p>
+  </div>
+</div>
