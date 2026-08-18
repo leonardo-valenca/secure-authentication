@@ -29,7 +29,7 @@ namespace Infrastructure
             // consequences for a caller, an orchestrator that restarts on a failed liveness check
             // would restart a healthy process just because its database is briefly unreachable. See
             // Program.cs's /alive (no tag - passes with zero checks) and /ready (this tag) mappings.
-            //services.AddHealthChecks().AddDbContextCheck<AppDbContext>(tags: ["ready"]);
+            services.AddHealthChecks().AddDbContextCheck<AppDbContext>(tags: ["ready"]);
 
             services
                 .AddIdentityCore<AppIdentityUser>(options =>

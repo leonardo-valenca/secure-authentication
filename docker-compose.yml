@@ -1,0 +1,98 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in a .env file, see .env.example}
+    # No published port here either, same reasoning as `api` below, `api` reaches this over
+    # the private Compose network by service name, and nothing outside Docker needs to.
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+      # Host-visible so scripts/backup-db.sh's output can be copied off the box (to offsite
+      # storage, a snapshot, wherever) without reaching into the container's own data volume.
+      - ./backups:/var/opt/mssql/backup
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in a .env file, see .env.example}"]
+    # No published port here either, same reasoning as sqlserver/api - only reachable from other
+    # containers on the private Compose network.
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "$$REDIS_PASSWORD", "--no-auth-warning", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api:
+    build:
+      context: ./src/backend
+      dockerfile: Api/Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Database: "Server=sqlserver,1433;Database=CleanAuthentication;User Id=sa;Password=${DB_PASSWORD};TrustServerCertificate=True"
+      # Backs the auth rate limiter with a shared counter instead of one per API instance, see
+      # Program.cs. Only matters once there's more than one instance behind a load balancer;
+      # harmless (and exercised the same way) at the single-instance scale this compose file runs.
+      ConnectionStrings__Redis: "redis:6379,password=${REDIS_PASSWORD}"
+      Jwt__Issuer: CleanAuthentication
+      Jwt__Audience: CleanAuthentication
+      Jwt__SigningKeys__0__Id: ${JWT_SIGNING_KEY_ID:-primary}
+      Jwt__SigningKeys__0__Key: ${JWT_SIGNING_KEY:?Set JWT_SIGNING_KEY in a .env file, see .env.example}
+      # Uncomment during a key rotation to keep validating tokens signed with the outgoing key
+      # until they naturally expire, see README's "Rotating the JWT signing key" section.
+      # Jwt__SigningKeys__1__Id: ${JWT_SIGNING_KEY_ID_PREVIOUS}
+      # Jwt__SigningKeys__1__Key: ${JWT_SIGNING_KEY_PREVIOUS}
+      Jwt__AccessTokenLifetimeMinutes: "15"
+      Frontend__BaseUrl: "https://${SITE_ADDRESS:-localhost}"
+      # Optional - falls back to the logging stub (LoggingEmailSender) whenever SMTP_HOST is blank.
+      Smtp__Host: ${SMTP_HOST:-}
+      Smtp__Port: ${SMTP_PORT:-587}
+      Smtp__Username: ${SMTP_USERNAME:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      Smtp__FromAddress: ${SMTP_FROM_ADDRESS:-}
+      # Optional - traces only export once this points at a real OTLP-compatible collector (Jaeger,
+      # Grafana Tempo/Alloy, Honeycomb, Datadog, ...). See README's "Metrics and tracing" bullet.
+      # Otel__OtlpEndpoint: http://otel-collector:4317
+    # No published port here on purpose, the proxy is the only public entry point. Publishing
+    # this directly would let a client bypass it and hit the API over plain HTTP, where the
+    # Secure-flagged auth cookies silently don't work; it would also mean api's blanket trust of
+    # X-Forwarded-* headers (see Program.cs) could be spoofed by anyone hitting this port directly.
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  proxy:
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    ports:
+      - "443:443"
+    volumes:
+      - ./.certs:/certs:ro
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  sqlserver-data:

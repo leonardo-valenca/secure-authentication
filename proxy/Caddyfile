@@ -1,0 +1,28 @@
+# Local dev: presents the same trusted ASP.NET Core dev cert `npm start` already uses for the
+# frontend, mounted in from ../.certs (see README - `dotnet dev-certs https --export-path`).
+#
+# Real deployment: replace the site address below with the real domain and delete the `tls` line
+# Caddy issues and renews a real Let's Encrypt certificate automatically for any public domain,
+# no other change needed.
+{$SITE_ADDRESS:localhost} {
+	tls /certs/localhost.pem /certs/localhost.key
+
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+
+	# The only backend routes not under /api - Program.cs maps these at the root.
+	handle /alive {
+		reverse_proxy api:8080
+	}
+
+	handle /ready {
+		reverse_proxy api:8080
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
