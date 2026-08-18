@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  backend:
+    name: Backend (build + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore SecureAuthentication.slnx
+
+      - name: Format check
+        run: dotnet format SecureAuthentication.slnx --no-restore --verify-no-changes
+
+      - name: Build
+        run: dotnet build SecureAuthentication.slnx --no-restore --configuration Release
+
+      # Api.IntegrationTests spins up a real SQL Server via Testcontainers, GitHub's
+      # ubuntu runners ship with Docker preinstalled and running, no extra setup needed.
+      - name: Test
+        run: dotnet test SecureAuthentication.slnx --no-build --configuration Release
+
+  frontend:
+    name: Frontend (build + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "npm"
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Build
+        run: npx ng build
+
+      - name: Test
+        run: npx ng test --watch=false
+
+  smoke-test:
+    name: Docker Compose smoke test
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Needed only for `dotnet dev-certs` below - the same command README.md documents for
+      # local dev, run here non-interactively.
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Generate a dev TLS cert for Caddy
+        run: dotnet dev-certs https --export-path .certs/localhost.pem --format Pem --no-password
+
+      - name: Write an ephemeral .env
+        run: |
+          {
+            echo "DB_PASSWORD=$(openssl rand -base64 24)"
+            echo "REDIS_PASSWORD=$(openssl rand -base64 24)"
+            echo "JWT_SIGNING_KEY=$(openssl rand -base64 32)"
+            echo "JWT_SIGNING_KEY_ID=ci"
+          } > .env
+          # SMTP_* stay unset on purpose - LoggingEmailSender logs the confirmation link instead,
+          # which this job reads back below, same as a developer watching `docker compose logs`.
+
+      - name: docker compose up
+        run: docker compose up --build -d
+
+      # docker compose up -d returns as soon as containers start, not once they're healthy, and
+      # sqlserver/api's own healthchecks (start_period + interval*retries, see docker-compose.yml)
+      # can take a couple of minutes on a cold runner with no cached images. Generous budget here
+      # on purpose - a genuinely broken deployment still fails, just after exhausting it.
+      - name: Wait for the stack to report healthy
+        run: curl -sk --retry 40 --retry-connrefused --retry-delay 5 --retry-all-errors -f https://localhost/ready
+
+      - name: Drive a real register -> confirm -> login -> me flow through the deployed stack
+        run: |
+          set -euo pipefail
+          jar=$(mktemp)
+          base_url=https://localhost
+          email="smoke-$(date +%s)@example.com"
+
+          curl -sk -c "$jar" -o /dev/null "$base_url/api/csrf-token"
+          csrf_token=$(awk '$6 == "XSRF-TOKEN" { print $7 }' "$jar")
+          [ -n "$csrf_token" ] || { echo "no XSRF-TOKEN cookie in jar"; cat "$jar"; exit 1; }
+
+          register_status=$(curl -sk -b "$jar" -c "$jar" -o /dev/null -w '%{http_code}' \
+            -X POST "$base_url/api/authentication/register" \
+            -H "Content-Type: application/json" -H "X-XSRF-TOKEN: $csrf_token" \
+            -d "{\"email\":\"$email\",\"password\":\"StrongPass1!\"}")
+          [ "$register_status" = "200" ] || { echo "register: expected 200, got $register_status"; exit 1; }
+
+          # No SMTP configured, so the confirmation link only ever reaches LoggingEmailSender's
+          # log line - read it back from the container the same way a developer would.
+          confirm_url=""
+          for _ in $(seq 1 10); do
+            confirm_url=$(docker compose logs api 2>/dev/null | grep -oE 'https://[^ ]*confirm-email[^ "]*' | tail -1 || true)
+            [ -n "$confirm_url" ] && break
+            sleep 1
+          done
+          [ -n "$confirm_url" ] || { echo "confirmation link never appeared in api logs"; docker compose logs api; exit 1; }
+
+          encoded_token=$(printf '%s' "$confirm_url" | sed -n 's/.*[?&]token=\([^&]*\).*/\1/p')
+          token=$(python3 -c "import sys, urllib.parse; print(urllib.parse.unquote(sys.argv[1]))" "$encoded_token")
+
+          login_before_confirm_status=$(curl -sk -b "$jar" -c "$jar" -o /dev/null -w '%{http_code}' \
+            -X POST "$base_url/api/authentication/login" \
+            -H "Content-Type: application/json" -H "X-XSRF-TOKEN: $csrf_token" \
+            -d "{\"email\":\"$email\",\"password\":\"StrongPass1!\"}")
+          [ "$login_before_confirm_status" = "400" ] || { echo "login before confirming: expected 400, got $login_before_confirm_status"; exit 1; }
+
+          confirm_status=$(curl -sk -b "$jar" -c "$jar" -o /dev/null -w '%{http_code}' \
+            -X POST "$base_url/api/authentication/confirm-email" \
+            -H "Content-Type: application/json" -H "X-XSRF-TOKEN: $csrf_token" \
+            -d "{\"email\":\"$email\",\"token\":\"$token\"}")
+          [ "$confirm_status" = "204" ] || { echo "confirm-email: expected 204, got $confirm_status"; exit 1; }
+
+          login_status=$(curl -sk -b "$jar" -c "$jar" -o /dev/null -w '%{http_code}' \
+            -X POST "$base_url/api/authentication/login" \
+            -H "Content-Type: application/json" -H "X-XSRF-TOKEN: $csrf_token" \
+            -d "{\"email\":\"$email\",\"password\":\"StrongPass1!\"}")
+          [ "$login_status" = "200" ] || { echo "login: expected 200, got $login_status"; exit 1; }
+
+          me_status=$(curl -sk -b "$jar" -o /dev/null -w '%{http_code}' "$base_url/api/authentication/me")
+          [ "$me_status" = "200" ] || { echo "me: expected 200, got $me_status"; exit 1; }
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
