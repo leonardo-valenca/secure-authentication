@@ -13,6 +13,9 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using RedisRateLimiting;
 using Scalar.AspNetCore;
 using Serilog;
@@ -190,6 +193,38 @@ try
                 }));
         }
     });
+
+    // Metrics (request rates/durations, EF Core command timings, GC/thread-pool stats) and traces
+    // (one span per request, child spans for the DB calls it made), the "what's slow and why"
+    // layer that structured logs alone don't answer. The Prometheus exporter and EF Core
+    // instrumentation packages are still pre-1.0 (beta) upstream as of writing, a known, accepted
+    // tradeoff, not an oversight: OpenTelemetry's metrics/tracing API surface itself is stable, and
+    // these are the standard, actively-maintained packages for this stack, just not GA yet.
+    //
+    // Metrics are pull-based (see /metrics below) and useful with zero extra infrastructure.
+    // Traces are push-based, a span with nowhere to go isn't useful, so the OTLP exporter only
+    // turns on when Otel:OtlpEndpoint is actually configured, same optional-infrastructure pattern
+    // as Redis/SMTP above: point it at any OTLP-compatible collector (Jaeger, Grafana Tempo/Alloy,
+    // Honeycomb, Datadog, ...) to start collecting traces, no code change required.
+    var otlpEndpoint = builder.Configuration["Otel:OtlpEndpoint"];
+
+    builder.Services.AddOpenTelemetry()
+        .ConfigureResource(resource => resource.AddService(serviceName: "CleanAuthentication.Api"))
+        .WithMetrics(metrics => metrics   
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddRuntimeInstrumentation()
+            .AddPrometheusExporter())
+        .WithTracing(tracing =>
+        {
+            tracing
+                .AddAspNetCoreInstrumentation()
+                .AddHttpClientInstrumentation()
+                .AddEntityFrameworkCoreInstrumentation();
+
+            if (!string.IsNullOrEmpty(otlpEndpoint))
+                tracing.AddOtlpExporter(options => options.Endpoint = new Uri(otlpEndpoint));
+        });
 
     var app = builder.Build();
 
