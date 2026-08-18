@@ -1,0 +1,162 @@
+<div class="page">
+  <div class="card">
+    <h1>Two-factor authentication</h1>
+
+    @switch (view()) {
+      @case ('loading') {
+        <p>Loading…</p>
+      }
+
+      @case ('disabled') {
+        <p class="card-footer">
+          Two-factor authentication is currently off. Turning it on requires an authenticator app
+          code at every login, in addition to your password.
+        </p>
+        <button type="button" (click)="startSetup()">Enable two-factor authentication</button>
+      }
+
+      @case ('setup') {
+        <p class="card-footer">
+          Scan this code with your authenticator app (Google Authenticator, 1Password, Authy, …), or
+          enter the key manually.
+        </p>
+
+        @if (qrCodeDataUrl()) {
+          <img
+            [src]="qrCodeDataUrl()"
+            alt="QR code for two-factor authentication setup"
+            class="qr-code"
+          />
+        }
+
+        @if (sharedKey()) {
+          <p class="shared-key">{{ sharedKey() }}</p>
+        }
+
+        <form [formGroup]="setupForm" (ngSubmit)="confirmSetup()" novalidate>
+          <div class="field">
+            <label for="setup-code">Code from your authenticator app</label>
+            <input
+              id="setup-code"
+              type="text"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              formControlName="code"
+              [attr.aria-invalid]="
+                setupForm.controls.code.invalid && setupForm.controls.code.touched
+              "
+              [attr.aria-describedby]="
+                setupForm.controls.code.invalid && setupForm.controls.code.touched
+                  ? 'setup-code-error'
+                  : null
+              "
+            />
+            @if (setupForm.controls.code.invalid && setupForm.controls.code.touched) {
+              <p id="setup-code-error" class="field-error" role="alert">A code is required.</p>
+            }
+          </div>
+
+          @if (errorMessage()) {
+            <p class="form-error" role="alert">{{ errorMessage() }}</p>
+          }
+
+          <button type="submit" [disabled]="submitting()">
+            {{ submitting() ? 'Verifying…' : 'Confirm and enable' }}
+          </button>
+        </form>
+
+        <p class="card-footer">
+          <a (click)="cancelSetup()">Cancel</a>
+        </p>
+      }
+
+      @case ('recovery-codes') {
+        <p class="form-error" role="alert">
+          Save these recovery codes somewhere safe. Each one can be used once, in place of your
+          authenticator app, if you lose access to it. They won't be shown again.
+        </p>
+
+        <ul class="recovery-codes">
+          @for (code of recoveryCodes(); track code) {
+            <li>{{ code }}</li>
+          }
+        </ul>
+
+        <button type="button" (click)="acknowledgeRecoveryCodes()">I've saved these codes</button>
+      }
+
+      @case ('enabled') {
+        <p class="card-footer">Two-factor authentication is on for your account.</p>
+        <button type="button" class="secondary" (click)="startRegenerate()">
+          Regenerate recovery codes
+        </button>
+        <button type="button" class="danger" (click)="startDisable()">
+          Disable two-factor authentication
+        </button>
+      }
+
+      @case ('disable') {
+        <p class="form-error" role="alert">
+          Confirm your password to disable two-factor authentication.
+        </p>
+
+        <form [formGroup]="passwordForm" (ngSubmit)="confirmDisable()" novalidate>
+          <div class="field">
+            <label for="disable-password">Current password</label>
+            <input
+              id="disable-password"
+              type="password"
+              autocomplete="current-password"
+              formControlName="currentPassword"
+            />
+          </div>
+
+          @if (errorMessage()) {
+            <p class="form-error" role="alert">{{ errorMessage() }}</p>
+          }
+
+          <button type="submit" class="danger" [disabled]="submitting()">
+            {{ submitting() ? 'Disabling…' : 'Disable two-factor authentication' }}
+          </button>
+        </form>
+
+        <p class="card-footer">
+          <a (click)="cancelPasswordPrompt()">Cancel</a>
+        </p>
+      }
+
+      @case ('regenerate') {
+        <p class="card-footer">
+          Confirm your password to generate a new set of recovery codes. Your existing codes will
+          stop working.
+        </p>
+
+        <form [formGroup]="passwordForm" (ngSubmit)="confirmRegenerate()" novalidate>
+          <div class="field">
+            <label for="regenerate-password">Current password</label>
+            <input
+              id="regenerate-password"
+              type="password"
+              autocomplete="current-password"
+              formControlName="currentPassword"
+            />
+          </div>
+
+          @if (errorMessage()) {
+            <p class="form-error" role="alert">{{ errorMessage() }}</p>
+          }
+
+          <button type="submit" [disabled]="submitting()">
+            {{ submitting() ? 'Regenerating…' : 'Regenerate recovery codes' }}
+          </button>
+        </form>
+
+        <p class="card-footer">
+          <a (click)="cancelPasswordPrompt()">Cancel</a>
+        </p>
+      }
+    }
+
+    <p class="card-footer"><a routerLink="/dashboard">Back to dashboard</a></p>
+  </div>
+</div>

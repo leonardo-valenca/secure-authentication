@@ -1,0 +1,39 @@
+<div class="page">
+  <div class="card">
+    <h1>Enter your code</h1>
+
+    <p class="card-footer">
+      Enter the 6-digit code from your authenticator app, or one of your recovery codes.
+    </p>
+
+    <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+      <div class="field">
+        <label for="code">Code</label>
+        <input
+          id="code"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          formControlName="code"
+          [attr.aria-invalid]="form.controls.code.invalid && form.controls.code.touched"
+          [attr.aria-describedby]="
+            form.controls.code.invalid && form.controls.code.touched ? 'code-error' : null
+          "
+        />
+        @if (form.controls.code.invalid && form.controls.code.touched) {
+          <p id="code-error" class="field-error" role="alert">A code is required.</p>
+        }
+      </div>
+
+      @if (errorMessage()) {
+        <p class="form-error" role="alert">{{ errorMessage() }}</p>
+      }
+
+      <button type="submit" [disabled]="submitting()">
+        {{ submitting() ? 'Verifying…' : 'Verify' }}
+      </button>
+    </form>
+
+    <p class="card-footer"><a routerLink="/login">Back to log in</a></p>
+  </div>
+</div>
