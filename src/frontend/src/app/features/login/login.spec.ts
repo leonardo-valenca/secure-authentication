@@ -86,7 +86,11 @@ describe('Login', () => {
         () =>
           new HttpErrorResponse({
             status: 400,
-            error: { errors: { 'User.EmailNotConfirmed': ['Please confirm your email address before logging in.'] } },
+            error: {
+              errors: {
+                'User.EmailNotConfirmed': ['Please confirm your email address before logging in.'],
+              },
+            },
           }),
       ),
     );

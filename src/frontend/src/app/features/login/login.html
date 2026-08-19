@@ -47,7 +47,10 @@
 
       @if (emailNotConfirmed()) {
         <p class="card-footer">
-          <a [routerLink]="['/resend-confirmation']" [queryParams]="{ email: form.controls.email.value }">
+          <a
+            [routerLink]="['/resend-confirmation']"
+            [queryParams]="{ email: form.controls.email.value }"
+          >
             Resend confirmation email
           </a>
         </p>

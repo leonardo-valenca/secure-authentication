@@ -1,8 +1,4 @@
-import {
-  provideHttpClient,
-  withInterceptors,
-  withXsrfConfiguration,
-} from '@angular/common/http';
+import { provideHttpClient, withInterceptors, withXsrfConfiguration } from '@angular/common/http';
 import {
   ApplicationConfig,
   inject,

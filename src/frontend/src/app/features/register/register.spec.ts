@@ -45,9 +45,7 @@ describe('Register', () => {
   });
 
   it('shows a success state with a resend link prefilled with the registered email', () => {
-    authService.register.mockReturnValue(
-      of({ id: '1', email: 'user@example.com' } as never),
-    );
+    authService.register.mockReturnValue(of({ id: '1', email: 'user@example.com' } as never));
     fillForm('user@example.com', 'StrongPass1!', 'StrongPass1!');
 
     component['submit']();
