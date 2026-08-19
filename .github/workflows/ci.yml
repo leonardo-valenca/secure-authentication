@@ -78,7 +78,9 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Generate a dev TLS cert for Caddy
-        run: dotnet dev-certs https --export-path .certs/localhost.pem --format Pem --no-password
+        run: |
+          mkdir -p .certs
+          dotnet dev-certs https --export-path .certs/localhost.pem --format Pem --no-password
 
       - name: Write an ephemeral .env
         run: |
