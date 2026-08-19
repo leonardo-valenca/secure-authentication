@@ -39,13 +39,13 @@ services:
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__Database: "Server=sqlserver,1433;Database=CleanAuthentication;User Id=sa;Password=${DB_PASSWORD};TrustServerCertificate=True"
+      ConnectionStrings__Database: "Server=sqlserver,1433;Database=SecureAuthentication;User Id=sa;Password=${DB_PASSWORD};TrustServerCertificate=True"
       # Backs the auth rate limiter with a shared counter instead of one per API instance, see
       # Program.cs. Only matters once there's more than one instance behind a load balancer;
       # harmless (and exercised the same way) at the single-instance scale this compose file runs.
       ConnectionStrings__Redis: "redis:6379,password=${REDIS_PASSWORD}"
-      Jwt__Issuer: CleanAuthentication
-      Jwt__Audience: CleanAuthentication
+      Jwt__Issuer: SecureAuthentication
+      Jwt__Audience: SecureAuthentication
       Jwt__SigningKeys__0__Id: ${JWT_SIGNING_KEY_ID:-primary}
       Jwt__SigningKeys__0__Key: ${JWT_SIGNING_KEY:?Set JWT_SIGNING_KEY in a .env file, see .env.example}
       # Uncomment during a key rotation to keep validating tokens signed with the outgoing key

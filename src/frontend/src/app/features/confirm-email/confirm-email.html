@@ -6,6 +6,9 @@
       <p class="form-error" role="alert">
         This confirmation link is invalid or missing information.
       </p>
+      <p class="card-footer">
+        <a routerLink="/resend-confirmation">Resend confirmation email</a>
+      </p>
       <p class="card-footer"><a routerLink="/login">Back to log in</a></p>
     } @else if (state() === 'confirming') {
       <p role="status">Confirming your email…</p>

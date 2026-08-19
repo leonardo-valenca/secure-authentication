@@ -32,7 +32,7 @@ namespace Api.Endpoints.Authentication
             switch (result.Value)
             {
                 case LoginOutcome.RequiresTwoFactor requiresTwoFactor:
-                    // MfaChallengeCookie.Issue(httpContext.Response, dataProtectionProvider, requiresTwoFactor.UserId);
+                    MfaChallengeCookie.Issue(httpContext.Response, dataProtectionProvider, requiresTwoFactor.UserId);
                     return TypedResults.Ok(new Response(RequiresTwoFactor: true, User: null));
 
                 case LoginOutcome.Completed completed:

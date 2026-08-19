@@ -1,0 +1,42 @@
+<div class="page">
+  <div class="card">
+    <h1>Resend confirmation email</h1>
+
+    @if (success()) {
+      <p class="form-success" role="status">
+        If an account exists for that email and isn't confirmed yet, we've sent a new
+        confirmation link.
+      </p>
+      <p class="card-footer"><a routerLink="/login">Back to log in</a></p>
+    } @else {
+      <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        <div class="field">
+          <label for="email">Email</label>
+          <input
+            id="email"
+            type="email"
+            formControlName="email"
+            autocomplete="email"
+            [attr.aria-invalid]="form.controls.email.invalid && form.controls.email.touched"
+            [attr.aria-describedby]="
+              form.controls.email.invalid && form.controls.email.touched ? 'email-error' : null
+            "
+          />
+          @if (form.controls.email.invalid && form.controls.email.touched) {
+            <p id="email-error" class="field-error" role="alert">A valid email is required.</p>
+          }
+        </div>
+
+        @if (errorMessage()) {
+          <p class="form-error" role="alert">{{ errorMessage() }}</p>
+        }
+
+        <button type="submit" [disabled]="submitting()">
+          {{ submitting() ? 'Sending…' : 'Resend confirmation email' }}
+        </button>
+      </form>
+
+      <p class="card-footer"><a routerLink="/login">Back to log in</a></p>
+    }
+  </div>
+</div>

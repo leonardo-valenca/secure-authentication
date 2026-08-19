@@ -45,6 +45,14 @@
         <p class="form-error" role="alert">{{ errorMessage() }}</p>
       }
 
+      @if (emailNotConfirmed()) {
+        <p class="card-footer">
+          <a [routerLink]="['/resend-confirmation']" [queryParams]="{ email: form.controls.email.value }">
+            Resend confirmation email
+          </a>
+        </p>
+      }
+
       <button type="submit" [disabled]="submitting()">
         {{ submitting() ? 'Logging in…' : 'Log in' }}
       </button>

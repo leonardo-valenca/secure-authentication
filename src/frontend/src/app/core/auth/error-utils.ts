@@ -19,3 +19,13 @@ export function extractErrorMessage(
 
   return fallback;
 }
+
+/** Checks for a specific ValidationProblem error code, e.g. distinguishing "email not confirmed" from a generic invalid-credentials error. */
+export function hasErrorCode(error: unknown, code: string): boolean {
+  if (error instanceof HttpErrorResponse) {
+    const problemErrors = error.error?.errors as Record<string, string[]> | undefined;
+    return !!problemErrors && code in problemErrors;
+  }
+
+  return false;
+}
