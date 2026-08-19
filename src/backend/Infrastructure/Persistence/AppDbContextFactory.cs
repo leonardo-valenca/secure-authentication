@@ -8,7 +8,7 @@ namespace Infrastructure.Persistence
         public AppDbContext CreateDbContext(string[] args)
         {
             var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__Database")
-                ?? "Server=localhost,1433;Database=CleanAuthentication;User Id=sa;Password=Placeholder_1234!;TrustServerCertificate=True";
+                ?? "Server=localhost,1433;Database=SecureAuthentication;User Id=sa;Password=Placeholder_1234!;TrustServerCertificate=True";
 
             var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
             optionsBuilder.UseSqlServer(connectionString);

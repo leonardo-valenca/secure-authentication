@@ -218,7 +218,7 @@ try
     var otlpEndpoint = builder.Configuration["Otel:OtlpEndpoint"];
 
     builder.Services.AddOpenTelemetry()
-        .ConfigureResource(resource => resource.AddService(serviceName: "CleanAuthentication.Api"))
+        .ConfigureResource(resource => resource.AddService(serviceName: "SecureAuthentication.Api"))
         .WithMetrics(metrics => metrics   
             .AddAspNetCoreInstrumentation()
             .AddHttpClientInstrumentation()
