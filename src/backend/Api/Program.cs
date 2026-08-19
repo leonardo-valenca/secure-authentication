@@ -219,7 +219,7 @@ try
 
     builder.Services.AddOpenTelemetry()
         .ConfigureResource(resource => resource.AddService(serviceName: "SecureAuthentication.Api"))
-        .WithMetrics(metrics => metrics   
+        .WithMetrics(metrics => metrics
             .AddAspNetCoreInstrumentation()
             .AddHttpClientInstrumentation()
             .AddRuntimeInstrumentation()
@@ -244,7 +244,7 @@ try
         var dbContext = migrationScope.ServiceProvider.GetRequiredService<AppDbContext>();
         await dbContext.Database.MigrateAsync();
     }
-    
+
     // Configure the HTTP request pipeline.
     if (app.Environment.IsDevelopment())
     {
@@ -313,7 +313,7 @@ try
     // proxy/Caddyfile) never routes to /metrics, so this is only ever reachable from inside the
     // Compose network - by a Prometheus instance scraping it, not the public internet.
     app.MapPrometheusScrapingEndpoint();
-    
+
     app.Run();
 }
 catch (Exception exception) when (exception is not HostAbortedException)

@@ -11,7 +11,7 @@ namespace Infrastructure.Persistence
         : IdentityDbContext<AppIdentityUser, IdentityRole<Guid>, Guid>(options), IUnitOfWork
     {
         public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
-        
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
