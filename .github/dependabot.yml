@@ -9,6 +9,14 @@ updates:
     directory: "/src/frontend"
     schedule:
       interval: "weekly"
+    groups:
+      # @angular/* packages share peer dependencies with each other and with typescript, so
+      # bumping just one at a time breaks npm's dependency resolution. One PR for the whole
+      # set means it can be upgraded (and tested) together, the same way `ng update` does it.
+      angular:
+        patterns:
+          - "@angular/*"
+          - "typescript"
 
   - package-ecosystem: "docker"
     directory: "/src/backend/Api"

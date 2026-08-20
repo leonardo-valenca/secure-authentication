@@ -1,4 +1,9 @@
-import { provideHttpClient, withInterceptors, withXsrfConfiguration } from '@angular/common/http';
+import {
+  provideHttpClient,
+  withInterceptors,
+  withXsrfConfiguration,
+  withXhr,
+} from '@angular/common/http';
 import {
   ApplicationConfig,
   inject,
@@ -17,6 +22,7 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
     provideHttpClient(
+      withXhr(),
       withXsrfConfiguration({ cookieName: 'XSRF-TOKEN', headerName: 'X-XSRF-TOKEN' }),
       withInterceptors([authInterceptor]),
     ),
