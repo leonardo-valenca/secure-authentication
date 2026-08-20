@@ -29,7 +29,7 @@
     "@angular/compiler": "^21.1.0",
     "@angular/core": "^21.1.0",
     "@angular/forms": "^21.1.0",
-    "@angular/platform-browser": "^21.1.0",
+    "@angular/platform-browser": "^22.1.2",
     "@angular/router": "^21.1.0",
     "qrcode": "^1.5.4",
     "rxjs": "~7.8.0",
