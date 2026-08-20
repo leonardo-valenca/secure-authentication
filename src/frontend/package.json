@@ -40,6 +40,7 @@
     "@angular/cli": "^21.1.2",
     "@angular/compiler-cli": "^21.1.0",
     "@types/qrcode": "^1.5.6",
+    "@vitest/coverage-v8": "^4.1.11",
     "jsdom": "^27.1.0",
     "prettier": "^3.9.6",
     "typescript": "~5.9.2",

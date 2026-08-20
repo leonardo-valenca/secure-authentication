@@ -6,6 +6,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     name: Backend (build + test)
@@ -21,8 +28,25 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('src/backend/**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
       - name: Restore
         run: dotnet restore SecureAuthentication.slnx
+
+      - name: Check for known vulnerable packages
+        run: |
+          output=$(dotnet list SecureAuthentication.slnx package --vulnerable --include-transitive)
+          echo "$output"
+          if echo "$output" | grep -q "following vulnerable packages"; then
+            echo "A package above has a known vulnerability."
+            exit 1
+          fi
 
       - name: Format check
         run: dotnet format SecureAuthentication.slnx --no-restore --verify-no-changes
@@ -33,7 +57,26 @@ jobs:
       # Api.IntegrationTests spins up a real SQL Server via Testcontainers, GitHub's
       # ubuntu runners ship with Docker preinstalled and running, no extra setup needed.
       - name: Test
-        run: dotnet test SecureAuthentication.slnx --no-build --configuration Release
+        run: >
+          dotnet test SecureAuthentication.slnx --no-build --configuration Release
+          --collect:"XPlat Code Coverage" --results-directory ./coverage
+
+      - name: Code coverage summary
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: src/backend/coverage/**/coverage.cobertura.xml
+          badge: false
+          format: markdown
+          output: both
+
+      - name: Add coverage to the job summary
+        run: cat "$GITHUB_WORKSPACE/code-coverage-results.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: src/backend/coverage/**/coverage.cobertura.xml
 
   frontend:
     name: Frontend (build + test)
@@ -54,6 +97,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
       - name: Format check
         run: npm run format:check
 
@@ -61,7 +107,36 @@ jobs:
         run: npx ng build
 
       - name: Test
-        run: npx ng test --watch=false
+        run: npx ng test --watch=false --coverage --coverage-reporters=cobertura
+
+      - name: Code coverage summary
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: src/frontend/coverage/frontend/cobertura-coverage.xml
+          badge: false
+          format: markdown
+          output: both
+
+      - name: Add coverage to the job summary
+        run: cat "$GITHUB_WORKSPACE/code-coverage-results.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: src/frontend/coverage/frontend/cobertura-coverage.xml
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   smoke-test:
     name: Docker Compose smoke test
@@ -70,7 +145,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Needed only for `dotnet dev-certs` below - the same command README.md documents for
+      # Needed only for `dotnet dev-certs` below, the same command README.md documents for
       # local dev, run here non-interactively.
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -90,7 +165,7 @@ jobs:
             echo "JWT_SIGNING_KEY=$(openssl rand -base64 32)"
             echo "JWT_SIGNING_KEY_ID=ci"
           } > .env
-          # SMTP_* stay unset on purpose - LoggingEmailSender logs the confirmation link instead,
+          # SMTP_* stay unset on purpose. LoggingEmailSender logs the confirmation link instead,
           # which this job reads back below, same as a developer watching `docker compose logs`.
 
       - name: docker compose up
@@ -99,7 +174,7 @@ jobs:
       # docker compose up -d returns as soon as containers start, not once they're healthy, and
       # sqlserver/api's own healthchecks (start_period + interval*retries, see docker-compose.yml)
       # can take a couple of minutes on a cold runner with no cached images. Generous budget here
-      # on purpose - a genuinely broken deployment still fails, just after exhausting it.
+      # on purpose, a genuinely broken deployment still fails, just after exhausting it.
       - name: Wait for the stack to report healthy
         run: curl -sk --retry 40 --retry-connrefused --retry-delay 5 --retry-all-errors -f https://localhost/ready
 
@@ -121,7 +196,7 @@ jobs:
           [ "$register_status" = "200" ] || { echo "register: expected 200, got $register_status"; exit 1; }
 
           # No SMTP configured, so the confirmation link only ever reaches LoggingEmailSender's
-          # log line - read it back from the container the same way a developer would.
+          # log line. Read it back from the container the same way a developer would.
           confirm_url=""
           for _ in $(seq 1 10); do
             confirm_url=$(docker compose logs api 2>/dev/null | grep -oE 'https://[^ ]*confirm-email[^ "]*' | tail -1 || true)
